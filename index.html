@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GIS Portfolio</title>
+  <meta name="description" content="Portfolio of ArcGIS and GIS projects." />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a30;
+      --panel-hover: #18223f;
+      --border: #24304f;
+      --text: #e8ecf6;
+      --muted: #94a0bd;
+      --accent: #3fc8ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+    }
+    header { padding: 2.5rem 1.5rem 0; max-width: 1200px; margin: 0 auto; }
+    header h1 { margin: 0 0 .25rem; font-size: clamp(1.8rem, 4vw, 2.6rem); }
+    header p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 2rem;
+      align-items: center;
+    }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+    /* Globe */
+    .globe-wrap { position: relative; width: 100%; max-width: 640px; margin: 0 auto; aspect-ratio: 1; }
+    #globe { width: 100%; height: 100%; cursor: grab; touch-action: none; }
+    #globe.dragging { cursor: grabbing; }
+    .hint { text-align: center; color: var(--muted); font-size: .8rem; margin-top: .5rem; }
+
+    /* Marker labels (CSS Anchor Positioning, degrades gracefully if unsupported) */
+    .marker-label {
+      position: absolute;
+      bottom: anchor(top);
+      left: anchor(center);
+      translate: -50% 0;
+      margin-bottom: 8px;
+      padding: .2rem .55rem;
+      background: rgba(10, 15, 30, .9);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: .72rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+
+    /* Project list */
+    .projects { display: flex; flex-direction: column; gap: .75rem; }
+    .project {
+      text-align: left;
+      width: 100%;
+      font: inherit;
+      color: inherit;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+      cursor: pointer;
+      transition: background .2s, border-color .2s, transform .2s;
+    }
+    .project:hover { background: var(--panel-hover); }
+    .project:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .project.active { border-color: var(--accent); transform: translateX(4px); }
+    .project h2 { margin: 0 0 .15rem; font-size: 1.05rem; }
+    .project .place { color: var(--accent); font-size: .8rem; margin-bottom: .35rem; }
+    .project p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .project .details { display: none; margin-top: .75rem; }
+    .project.active .details { display: block; }
+    .tags { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0; }
+    .tag { font-size: .7rem; padding: .1rem .5rem; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); }
+    .link {
+      display: inline-block;
+      margin-top: .25rem;
+      color: var(--bg);
+      background: var(--accent);
+      padding: .35rem .8rem;
+      border-radius: 6px;
+      font-size: .85rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .link:hover { filter: brightness(1.1); }
+
+    footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 1rem 1rem 2.5rem; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Your Name · GIS Portfolio</h1>
+    <p>Maps, analysis, and spatial storytelling built with ArcGIS. Pick a project or drag the globe to explore.</p>
+  </header>
+
+  <main>
+    <section>
+      <div class="globe-wrap" id="globe-wrap">
+        <canvas id="globe" width="1200" height="1200" aria-label="Interactive globe showing project locations"></canvas>
+        <!-- marker labels are injected here by the script -->
+      </div>
+      <div class="hint">Drag to rotate · click a project to fly to it</div>
+    </section>
+
+    <section class="projects" id="projects" aria-label="Projects"></section>
+  </main>
+
+  <footer>
+    Globe by <a href="https://cobe.vercel.app" target="_blank" rel="noopener">COBE</a> ·
+    Maps by <a href="https://www.esri.com/en-us/arcgis/about-arcgis/overview" target="_blank" rel="noopener">ArcGIS</a>
+  </footer>
+
+  <script type="module">
+    // Load COBE defensively: if the CDN is blocked, the rest of the page still works.
+    let createGlobe = null;
+    const COBE_URLS = [
+      "https://esm.sh/cobe",
+      "https://cdn.jsdelivr.net/npm/cobe/+esm",
+      "https://cdn.skypack.dev/cobe"
+    ];
+    for (const url of COBE_URLS) {
+      try {
+        ({ default: createGlobe } = await import(url));
+        if (createGlobe) break;
+      } catch (err) {
+        console.warn("COBE failed to load from", url, err);
+      }
+    }
+    if (!createGlobe) console.error("Could not load COBE from any CDN.");
+
+    // ============================================================
+    //  EDIT ME: replace these sample projects with your own.
+    //  location = [latitude, longitude]
+    //  url = link to your ArcGIS StoryMap, Web Map, Dashboard, or
+    //        Experience (use the "Share" link from ArcGIS Online)
+    // ============================================================
+    const PROJECTS = [
+      {
+        id: "flood-risk",
+        title: "Coastal Flood Risk Analysis",
+        place: "Tampa Bay, Florida",
+        location: [27.77, -82.64],
+        summary: "Modeled storm-surge exposure for coastal neighborhoods using elevation and parcel data.",
+        tags: ["ArcGIS Pro", "Spatial Analyst", "LiDAR"],
+        url: "https://www.arcgis.com/"
+      },
+      {
+        id: "transit-access",
+        title: "Transit Accessibility Study",
+        place: "Chicago, Illinois",
+        location: [41.88, -87.63],
+        summary: "Network analysis of walk-time access to transit stops across census tracts.",
+        tags: ["Network Analyst", "Census data", "Dashboards"],
+        url: "https://www.arcgis.com/"
+      },
+      {
+        id: "habitat",
+        title: "Habitat Connectivity Map",
+        place: "Nairobi, Kenya",
+        location: [-1.29, 36.82],
+        summary: "Least-cost corridor analysis linking protected areas for wildlife movement.",
+        tags: ["Remote sensing", "Raster analysis", "StoryMaps"],
+        url: "https://www.arcgis.com/"
+      },
+      {
+        id: "urban-heat",
+        title: "Urban Heat Island Mapping",
+        place: "Tokyo, Japan",
+        location: [35.68, 139.65],
+        summary: "Landsat thermal imagery combined with land-cover data to identify heat hotspots.",
+        tags: ["Landsat", "Zonal statistics", "Web Map"],
+        url: "https://www.arcgis.com/"
+      }
+    ];
+
+    // ---------- helpers ----------
+    const TAU = Math.PI * 2;
+    // lat/lon -> [phi, theta] that faces that point toward the camera
+    const locationToAngles = (lat, lon) => [
+      Math.PI - ((lon * Math.PI) / 180 - Math.PI / 2),
+      (lat * Math.PI) / 180
+    ];
+    // shortest signed angular difference
+    const angleDiff = (a, b) => ((((b - a + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+
+    // ---------- build marker labels + project cards ----------
+    const wrap = document.getElementById("globe-wrap");
+    const list = document.getElementById("projects");
+    const cards = new Map();
+
+    for (const p of PROJECTS) {
+      const label = document.createElement("div");
+      label.className = "marker-label";
+      label.textContent = p.title;
+      label.style.positionAnchor = `--cobe-${p.id}`;
+      label.style.opacity = `var(--cobe-visible-${p.id}, 0)`;
+      wrap.appendChild(label);
+
+      const card = document.createElement("button");
+      card.className = "project";
+      card.type = "button";
+      card.innerHTML = `
+        <h2></h2>
+        <div class="place"></div>
+        <p></p>
+        <div class="details">
+          <div class="tags"></div>
+          <a class="link" target="_blank" rel="noopener">View project →</a>
+        </div>`;
+      card.querySelector("h2").textContent = p.title;
+      card.querySelector(".place").textContent = p.place;
+      card.querySelector("p").textContent = p.summary;
+      p.tags.forEach(t => {
+        const s = document.createElement("span");
+        s.className = "tag";
+        s.textContent = t;
+        card.querySelector(".tags").appendChild(s);
+      });
+      const a = card.querySelector(".link");
+      a.href = p.url;
+      a.addEventListener("click", e => e.stopPropagation());
+      card.addEventListener("click", () => select(p.id));
+      list.appendChild(card);
+      cards.set(p.id, card);
+    }
+
+    // ---------- globe ----------
+    const canvas = document.getElementById("globe");
+    let phi = 0, theta = 0.25;
+    let targetPhi = 0, targetTheta = 0.25;
+    let focused = false, dragging = false;
+    let lastX = 0, lastY = 0, resumeTimer;
+
+    const globe = createGlobe ? createGlobe(canvas, {
+      devicePixelRatio: 2,
+      width: 600 * 2,
+      height: 600 * 2,
+      phi, theta,
+      dark: 1,
+      diffuse: 1.2,
+      mapSamples: 16000,
+      mapBrightness: 6,
+      baseColor: [0.3, 0.3, 0.35],
+      markerColor: [0.25, 0.8, 1],
+      glowColor: [0.1, 0.2, 0.45],
+      markerElevation: 0.02,
+      markers: PROJECTS.map(p => ({ location: p.location, size: 0.05, id: p.id }))
+    }) : { update() {} };
+
+    if (!createGlobe) {
+      document.querySelector(".hint").textContent =
+        "The globe couldn't load here (the COBE script was blocked or offline). The project list still works.";
+    }
+
+    function select(id) {
+      const p = PROJECTS.find(x => x.id === id);
+      [targetPhi, targetTheta] = locationToAngles(...p.location);
+      focused = true;
+      clearTimeout(resumeTimer);
+      cards.forEach((c, key) => c.classList.toggle("active", key === id));
+    }
+
+    function animate() {
+      if (!dragging) {
+        if (focused) {
+          phi += angleDiff(phi, targetPhi) * 0.08;
+          theta += (targetTheta - theta) * 0.08;
+        } else {
+          phi += 0.003;
+          theta += (0.25 - theta) * 0.05;
+        }
+      }
+      globe.update({ phi, theta });
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // ---------- drag to rotate ----------
+    canvas.addEventListener("pointerdown", e => {
+      dragging = true;
+      lastX = e.clientX; lastY = e.clientY;
+      canvas.classList.add("dragging");
+      canvas.setPointerCapture(e.pointerId);
+      clearTimeout(resumeTimer);
+    });
+    canvas.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      phi += (e.clientX - lastX) / 200;
+      theta = Math.max(-1.2, Math.min(1.2, theta + (e.clientY - lastY) / 200));
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    const endDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      canvas.classList.remove("dragging");
+      focused = false; // resume auto-rotate from wherever the user left it
+      cards.forEach(c => c.classList.remove("active"));
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+  </script>
+</body>
+</html>
