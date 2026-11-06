@@ -98,6 +98,15 @@
       text-decoration: none;
     }
     .link:hover { filter: brightness(1.1); }
+    .img-link { display: block; margin-top: .25rem; }
+    .map-img {
+      display: block;
+      width: 100%;
+      max-height: 320px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
 
     footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 1rem 1rem 2.5rem; }
     footer a { color: var(--muted); }
@@ -147,6 +156,9 @@
     // ============================================================
     //  EDIT ME: replace these sample projects with your own.
     //  location = [latitude, longitude]
+    //  image = (optional) path to a map photo in your repo, e.g. "images/my-map.png".
+    //          If you leave it out, the page looks for images/<id>.jpg
+    //  url = (optional) leave as "" if you only have a photo, no link
     //  url = link to your ArcGIS StoryMap, Web Map, Dashboard, or
     //        Experience (use the "Share" link from ArcGIS Online)
     // ============================================================
@@ -164,8 +176,8 @@
       {
         id: "district-changes",
         title: "Congressional District Changes in the Tampa Bay Area",
-        place: "Tampa, Florida",
-        location: [27.96, -82.45],
+        place: "Tampa Bay, Florida",
+        location: [27.77, -82.64],
         summary: "Map illustrating the 2026 congressional districts compared to previous districting, highlighting cities and census designated places that have changed districts.",
         tags: ["ArcGIS Pro", "Census data", "Voting data"],
         image: "image/Project2Baria.jpg",
@@ -222,6 +234,7 @@
         <div class="place"></div>
         <p></p>
         <div class="details">
+          <a class="img-link" target="_blank" rel="noopener" title="Open full size"><img class="map-img" loading="lazy" alt=""></a>
           <div class="tags"></div>
           <a class="link" target="_blank" rel="noopener">View project →</a>
         </div>`;
@@ -234,9 +247,24 @@
         s.textContent = t;
         card.querySelector(".tags").appendChild(s);
       });
+      // Map photo: uses p.image if set, otherwise images/<id>.jpg. Hidden if the file doesn't exist.
+      const imgLink = card.querySelector(".img-link");
+      const img = card.querySelector(".map-img");
+      const src = p.image || `images/${p.id}.jpg`;
+      img.src = src;
+      img.alt = `Map: ${p.title}`;
+      imgLink.href = src;
+      imgLink.addEventListener("click", e => e.stopPropagation());
+      img.addEventListener("error", () => imgLink.remove());
+
+      // Link button: only shown if the project has a url
       const a = card.querySelector(".link");
-      a.href = p.url;
-      a.addEventListener("click", e => e.stopPropagation());
+      if (p.url) {
+        a.href = p.url;
+        a.addEventListener("click", e => e.stopPropagation());
+      } else {
+        a.remove();
+      }
       card.addEventListener("click", () => select(p.id));
       list.appendChild(card);
       cards.set(p.id, card);
@@ -249,7 +277,9 @@
     let focused = false, dragging = false;
     let lastX = 0, lastY = 0, resumeTimer;
 
-    const globe = createGlobe ? createGlobe(canvas, {
+    let globe = { update() {} };
+    try {
+    globe = createGlobe ? createGlobe(canvas, {
       devicePixelRatio: 2,
       width: 600 * 2,
       height: 600 * 2,
@@ -263,7 +293,11 @@
       glowColor: [0.1, 0.2, 0.45],
       markerElevation: 0.02,
       markers: PROJECTS.map(p => ({ location: p.location, size: 0.05, id: p.id }))
-    }) : { update() {} };
+    }) : globe;
+    } catch (err) {
+      console.error("COBE failed to start:", err);
+      document.querySelector(".hint").textContent = "Globe error: " + (err && err.message ? err.message : err);
+    }
 
     if (!createGlobe) {
       document.querySelector(".hint").textContent =
@@ -316,6 +350,9 @@
     };
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
+  </script>
+</body>
+</html>
   </script>
 </body>
 </html>
